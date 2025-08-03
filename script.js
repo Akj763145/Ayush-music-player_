@@ -1,3 +1,4 @@
+
 class MusicPlayer {
     constructor() {
         this.audio = document.getElementById('audioPlayer');
@@ -15,14 +16,14 @@ class MusicPlayer {
         this.albumArt = document.getElementById('albumArt');
         this.audioUpload = document.getElementById('audioUpload');
         this.playlistContainer = document.querySelector('.playlist-container');
-        this.repeatBtn = document.getElementById('repeatBtn'); // Add repeat button
+        this.repeatBtn = document.getElementById('repeatBtn');
 
         this.playlist = [];
         this.currentTrackIndex = 0;
         this.isPlaying = false;
         this.isDragging = false;
         this.lastProgressUpdate = 0;
-        this.isRepeatAll = true; // Repeat all enabled by default
+        this.isRepeatAll = true;
 
         this.init();
     }
@@ -31,19 +32,24 @@ class MusicPlayer {
         this.loadSavedPlaylist();
         this.setupEventListeners();
         this.setVolume(50);
+        this.autoFetchDeviceSongs();
 
         if (this.playlist.length > 0) {
             this.loadTrack(0);
         } else {
             this.trackTitle.textContent = 'No songs in playlist';
-            this.trackArtist.textContent = 'Upload music to get started';
+            this.trackArtist.textContent = 'Click "Auto-fetch Device Songs" to get started';
             this.albumArt.src = 'https://via.placeholder.com/200x200/000000/ffffff?text=♪';
+            
+            // Auto-trigger notification to use auto-fetch
+            setTimeout(() => {
+                this.showNotification('Click "Auto-fetch Device Songs" to automatically load music from your device!');
+            }, 1500);
         }
 
         this.updatePlaylistDisplay();
     }
 
-    // Save playlist to localStorage
     savePlaylist() {
         try {
             const playlistData = this.playlist.map(track => ({
@@ -52,7 +58,6 @@ class MusicPlayer {
                 artist: track.artist,
                 albumArt: track.albumArt,
                 saved: track.saved || false,
-                // Don't save blob URLs as they're temporary
                 src: track.src.startsWith('blob:') ? null : track.src
             }));
             localStorage.setItem('musicPlayerPlaylist', JSON.stringify(playlistData));
@@ -62,16 +67,20 @@ class MusicPlayer {
         }
     }
 
-    // Load playlist from localStorage
     loadSavedPlaylist() {
+        // Initialize empty playlist
+        this.playlist = [];
+        
         try {
             const savedPlaylist = localStorage.getItem('musicPlayerPlaylist');
             const savedIndex = localStorage.getItem('musicPlayerCurrentIndex');
 
             if (savedPlaylist) {
                 const parsedPlaylist = JSON.parse(savedPlaylist);
-                // Filter out tracks with null src (blob URLs that are no longer valid)
-                this.playlist = parsedPlaylist.filter(track => track.src !== null);
+                const validTracks = parsedPlaylist.filter(track => track.src !== null);
+                
+                // Load saved tracks
+                this.playlist = validTracks;
 
                 if (savedIndex && parseInt(savedIndex) < this.playlist.length) {
                     this.currentTrackIndex = parseInt(savedIndex);
@@ -82,57 +91,45 @@ class MusicPlayer {
         }
     }
 
-    // Generate unique ID for tracks
     generateTrackId() {
         return 'track-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
 
     setupEventListeners() {
-        // Play/Pause button
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
-
-        // Previous/Next buttons
         this.prevBtn.addEventListener('click', () => this.previousTrack());
         this.nextBtn.addEventListener('click', () => this.nextTrack());
 
-        // Progress bar events
         this.progressBar.addEventListener('click', (e) => this.seekTo(e));
         this.progressHandle.addEventListener('mousedown', (e) => this.startDragging(e));
         this.progressBar.addEventListener('mousedown', (e) => this.startDragging(e));
         document.addEventListener('mousemove', (e) => this.dragProgress(e));
         document.addEventListener('mouseup', () => this.stopDragging());
         
-        // Touch events for mobile
         this.progressHandle.addEventListener('touchstart', (e) => this.startDragging(e));
         this.progressBar.addEventListener('touchstart', (e) => this.startDragging(e));
         document.addEventListener('touchmove', (e) => this.dragProgress(e));
         document.addEventListener('touchend', () => this.stopDragging());
 
-        // Volume slider
         this.volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value));
 
-        // Audio events
         this.audio.addEventListener('loadedmetadata', () => this.updateDuration());
         this.audio.addEventListener('timeupdate', this.throttle(() => this.updateProgress(), 100));
         this.audio.addEventListener('ended', () => this.nextTrack());
         this.audio.addEventListener('loadstart', () => this.resetProgress());
         this.audio.addEventListener('error', (e) => this.handleAudioError(e));
 
-        // File upload
         this.audioUpload.addEventListener('change', (e) => this.handleFileUpload(e));
-
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
-
-        // Playlist item clicks
         this.playlistContainer.addEventListener('click', (e) => this.handlePlaylistClick(e));
-
-        // Repeat button click
         this.repeatBtn.addEventListener('click', () => this.toggleRepeat());
     }
 
     togglePlayPause() {
-        if (this.playlist.length === 0) return;
+        if (this.playlist.length === 0) {
+            this.showNotification('No songs in playlist. Please add music or use auto-fetch.');
+            return;
+        }
 
         if (this.isPlaying) {
             this.pause();
@@ -163,7 +160,10 @@ class MusicPlayer {
     }
 
     previousTrack() {
-        if (this.playlist.length === 0) return;
+        if (this.playlist.length === 0) {
+            this.showNotification('No songs in playlist. Please add music or use auto-fetch.');
+            return;
+        }
 
         this.currentTrackIndex = this.currentTrackIndex === 0 
             ? this.playlist.length - 1 
@@ -174,7 +174,10 @@ class MusicPlayer {
     }
 
     nextTrack() {
-        if (this.playlist.length === 0) return;
+        if (this.playlist.length === 0) {
+            this.showNotification('No songs in playlist. Please add music or use auto-fetch.');
+            return;
+        }
 
         const wasPlaying = this.isPlaying;
 
@@ -191,14 +194,13 @@ class MusicPlayer {
 
         this.loadTrack(this.currentTrackIndex);
         
-        // Auto-play the next song if the previous one was playing
         if (wasPlaying) {
-            // Small delay to ensure track is loaded
             setTimeout(() => {
                 this.play();
             }, 100);
         }
     }
+
     toggleRepeat() {
         this.isRepeatAll = !this.isRepeatAll;
         if (this.isRepeatAll) {
@@ -211,21 +213,30 @@ class MusicPlayer {
     }
 
     loadTrack(index) {
-        if (!this.playlist[index]) {
+        if (!this.playlist[index] || this.playlist.length === 0) {
+            this.pause();
+            this.audio.src = '';
+            this.audio.load(); // Clear the audio element
+            this.resetProgress();
             this.trackTitle.textContent = 'No songs in playlist';
-            this.trackArtist.textContent = 'Upload music to get started';
+            this.trackArtist.textContent = 'Click "Auto-fetch Device Songs" to get started';
             this.albumArt.src = 'https://via.placeholder.com/200x200/000000/ffffff?text=♪';
+            this.currentTrackIndex = 0;
+            this.updatePlaylistDisplay();
             return;
         }
 
         const track = this.playlist[index];
 
         try {
-            // Reset previous state
             this.pause();
             this.resetProgress();
 
-            // Load new track
+            // Validate track source before setting
+            if (!track.src || track.src === '') {
+                throw new Error('Invalid track source');
+            }
+
             this.audio.src = track.src;
             this.trackTitle.textContent = track.title || 'Unknown Title';
             this.trackArtist.textContent = track.artist || 'Unknown Artist';
@@ -238,6 +249,8 @@ class MusicPlayer {
             console.warn('Failed to load track:', track.title, error);
             this.trackTitle.textContent = 'Error loading track';
             this.trackArtist.textContent = 'Please try another file';
+            this.audio.src = '';
+            this.audio.load();
         }
     }
 
@@ -255,8 +268,6 @@ class MusicPlayer {
     startDragging(e) {
         this.isDragging = true;
         e.preventDefault();
-        
-        // Also update position immediately when starting to drag
         this.dragProgress(e);
     }
 
@@ -266,7 +277,6 @@ class MusicPlayer {
         const rect = this.progressBar.getBoundingClientRect();
         let clientX;
         
-        // Handle both mouse and touch events
         if (e.touches) {
             clientX = e.touches[0].clientX;
         } else {
@@ -276,12 +286,10 @@ class MusicPlayer {
         const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         const time = percent * this.audio.duration;
 
-        // Update the visual progress immediately while dragging
         this.progress.style.width = `${percent * 100}%`;
         this.progressHandle.style.left = `${percent * 100}%`;
         this.currentTimeEl.textContent = this.formatTime(time);
         
-        // Update audio time
         this.audio.currentTime = time;
     }
 
@@ -298,7 +306,6 @@ class MusicPlayer {
         if (duration && !isNaN(currentTime) && !isNaN(duration)) {
             const percent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
             
-            // Smooth animation for progress updates
             requestAnimationFrame(() => {
                 this.progress.style.width = `${percent}%`;
                 this.progressHandle.style.left = `${percent}%`;
@@ -336,7 +343,7 @@ class MusicPlayer {
         const files = Array.from(e.target.files);
 
         files.forEach(file => {
-            if (file.type.startsWith('audio/') && file.size < 50 * 1024 * 1024) { // 50MB limit
+            if (file.type.startsWith('audio/') && file.size < 50 * 1024 * 1024) {
                 try {
                     const url = URL.createObjectURL(file);
                     const track = {
@@ -350,7 +357,6 @@ class MusicPlayer {
 
                     this.playlist.push(track);
 
-                    // If this is the first track, load it
                     if (this.playlist.length === 1) {
                         this.loadTrack(0);
                     }
@@ -364,17 +370,135 @@ class MusicPlayer {
 
         this.updatePlaylistDisplay();
         this.savePlaylist();
-
-        // Reset file input
         e.target.value = '';
     }
 
+    async autoFetchDeviceSongs() {
+        try {
+            // Check if File System Access API is supported
+            if ('showDirectoryPicker' in window) {
+                const autoFetchBtn = document.createElement('button');
+                autoFetchBtn.className = 'auto-fetch-btn';
+                autoFetchBtn.innerHTML = '<i class="fas fa-folder-open"></i> Auto-fetch Device Songs';
+                autoFetchBtn.title = 'Automatically scan and load songs from a folder';
+                
+                const uploadSection = this.playlistContainer.querySelector('.upload-section');
+                uploadSection.appendChild(autoFetchBtn);
+
+                autoFetchBtn.addEventListener('click', async () => {
+                    await this.scanDeviceForSongs();
+                });
+            }
+        } catch (error) {
+            console.warn('Auto-fetch not supported on this browser:', error);
+        }
+    }
+
+    async scanDeviceForSongs() {
+        try {
+            const directoryHandle = await window.showDirectoryPicker({
+                mode: 'read'
+            });
+
+            const audioFiles = [];
+            await this.scanDirectory(directoryHandle, audioFiles);
+
+            if (audioFiles.length > 0) {
+                let loadedCount = 0;
+                for (const fileHandle of audioFiles) {
+                    try {
+                        const file = await fileHandle.getFile();
+                        if (file.type.startsWith('audio/') && file.size < 50 * 1024 * 1024) {
+                            const url = URL.createObjectURL(file);
+                            const track = {
+                                id: this.generateTrackId(),
+                                title: file.name.replace(/\.[^/.]+$/, ""),
+                                artist: 'Unknown Artist',
+                                src: url,
+                                albumArt: 'https://via.placeholder.com/200x200/333333/ffffff?text=♪',
+                                saved: false,
+                                autoFetched: true
+                            };
+
+                            // Check if song already exists
+                            const exists = this.playlist.some(existingTrack => 
+                                existingTrack.title === track.title
+                            );
+
+                            if (!exists) {
+                                this.playlist.push(track);
+                                loadedCount++;
+                            }
+                        }
+                    } catch (fileError) {
+                        console.warn('Failed to load file:', fileHandle.name, fileError);
+                    }
+                }
+
+                if (loadedCount > 0) {
+                    this.updatePlaylistDisplay();
+                    this.savePlaylist();
+                    
+                    if (this.playlist.length === loadedCount) {
+                        this.loadTrack(0);
+                    }
+
+                    this.showNotification(`Successfully loaded ${loadedCount} songs from device!`);
+                } else {
+                    this.showNotification('No new audio files found in the selected folder.');
+                }
+            } else {
+                this.showNotification('No audio files found in the selected folder.');
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.warn('Failed to scan device for songs:', error);
+                this.showNotification('Failed to access device folder. Please try again.');
+            }
+        }
+    }
+
+    async scanDirectory(directoryHandle, audioFiles, maxDepth = 2, currentDepth = 0) {
+        if (currentDepth >= maxDepth) return;
+
+        try {
+            for await (const entry of directoryHandle.values()) {
+                if (entry.kind === 'file') {
+                    const file = await entry.getFile();
+                    if (file.type.startsWith('audio/')) {
+                        audioFiles.push(entry);
+                    }
+                } else if (entry.kind === 'directory' && currentDepth < maxDepth - 1) {
+                    await this.scanDirectory(entry, audioFiles, maxDepth, currentDepth + 1);
+                }
+            }
+        } catch (error) {
+            console.warn('Error scanning directory:', error);
+        }
+    }
+
+    showNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'notification';
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.classList.add('show');
+        }, 100);
+
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 300);
+        }, 3000);
+    }
+
     updatePlaylistDisplay() {
-        // Remove existing playlist items (except upload section)
         const existingItems = this.playlistContainer.querySelectorAll('.playlist-item:not(.upload-section)');
         existingItems.forEach(item => item.remove());
 
-        // Add current playlist items
         const uploadSection = this.playlistContainer.querySelector('.upload-section');
 
         this.playlist.forEach((track, index) => {
@@ -382,10 +506,12 @@ class MusicPlayer {
             playlistItem.className = `playlist-item ${index === this.currentTrackIndex ? 'active' : ''}`;
             playlistItem.dataset.index = index;
 
+            const autoFetchedIcon = track.autoFetched ? '<i class="fas fa-robot" title="Auto-fetched"></i>' : '';
+
             playlistItem.innerHTML = `
                 <i class="fas fa-music"></i>
                 <div class="track-details">
-                    <span class="track-name">${track.title}</span>
+                    <span class="track-name">${track.title} ${autoFetchedIcon}</span>
                     <span class="track-artist">${track.artist}</span>
                 </div>
                 <div class="track-controls">
@@ -403,21 +529,18 @@ class MusicPlayer {
     }
 
     handlePlaylistClick(e) {
-        // Handle save button clicks
         if (e.target.closest('.save-btn')) {
             const index = parseInt(e.target.closest('.save-btn').dataset.index);
             this.toggleSaveTrack(index);
             return;
         }
 
-        // Handle remove button clicks
         if (e.target.closest('.remove-btn')) {
             const index = parseInt(e.target.closest('.remove-btn').dataset.index);
             this.removeTrack(index);
             return;
         }
 
-        // Handle playlist item clicks
         const playlistItem = e.target.closest('.playlist-item:not(.upload-section)');
         if (playlistItem) {
             const index = parseInt(playlistItem.dataset.index);
@@ -429,7 +552,6 @@ class MusicPlayer {
         }
     }
 
-    // Toggle save status of a track
     toggleSaveTrack(index) {
         if (this.playlist[index]) {
             this.playlist[index].saved = !this.playlist[index].saved;
@@ -438,30 +560,31 @@ class MusicPlayer {
         }
     }
 
-    // Remove track from playlist
     removeTrack(index) {
-        if (this.playlist.length <= 1) {
-            alert('Cannot remove the last track in the playlist');
-            return;
-        }
-
         if (confirm('Are you sure you want to remove this track?')) {
-            // Revoke blob URL if it exists
             if (this.playlist[index].src.startsWith('blob:')) {
                 URL.revokeObjectURL(this.playlist[index].src);
             }
 
             this.playlist.splice(index, 1);
 
-            // Adjust current track index
-            if (index === this.currentTrackIndex) {
-                // If we removed the current track, play the next one (or previous if it was the last)
-                if (index >= this.playlist.length) {
-                    this.currentTrackIndex = this.playlist.length - 1;
+            // Handle empty playlist
+            if (this.playlist.length === 0) {
+                this.pause();
+                this.audio.src = '';
+                this.audio.load();
+                this.resetProgress();
+                this.currentTrackIndex = 0;
+                this.loadTrack(0); // This will show the "no songs" message
+            } else {
+                if (index === this.currentTrackIndex) {
+                    if (index >= this.playlist.length) {
+                        this.currentTrackIndex = this.playlist.length - 1;
+                    }
+                    this.loadTrack(this.currentTrackIndex);
+                } else if (index < this.currentTrackIndex) {
+                    this.currentTrackIndex--;
                 }
-                this.loadTrack(this.currentTrackIndex);
-            } else if (index < this.currentTrackIndex) {
-                this.currentTrackIndex--;
             }
 
             this.updatePlaylistDisplay();
@@ -469,7 +592,6 @@ class MusicPlayer {
         }
     }
 
-    // Throttle function for performance
     throttle(func, limit) {
         let inThrottle;
         return function() {
@@ -483,7 +605,6 @@ class MusicPlayer {
         }
     }
 
-    // Handle audio errors
     handleAudioError(e) {
         console.warn('Audio error:', e);
         this.trackTitle.textContent = 'Error playing audio';
@@ -494,7 +615,6 @@ class MusicPlayer {
     }
 
     handleKeyPress(e) {
-        // Prevent default only for our shortcuts to avoid interfering with other page functionality
         switch(e.code) {
             case 'Space':
                 if (e.target === document.body) {
@@ -532,7 +652,6 @@ class MusicPlayer {
     }
 }
 
-// Initialize the music player when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     new MusicPlayer();
 });
